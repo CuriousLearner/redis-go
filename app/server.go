@@ -1,10 +1,30 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 )
+
+func handleConnection(conn net.Conn, buffer []byte) {
+	var err error
+	for {
+		_, err = conn.Read(buffer)
+		if errors.Is(err, io.EOF) {
+			fmt.Println("Error reading -- EOF reached: ", err.Error())
+			break
+		}
+		if err != nil {
+			fmt.Println("Error reading: ", err.Error())
+		}
+		_, err = conn.Write([]byte("+PONG\r\n"))
+		if err != nil {
+			fmt.Println("Error writing: ", err.Error())
+		}
+	}
+}
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -25,14 +45,9 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		_, err = conn.Read(buffer)
-		if err != nil {
-			fmt.Println("Error reading: ", err.Error())
-		}
-		_, err = conn.Write([]byte("+PONG\r\n"))
-		if err != nil {
-			fmt.Println("Error writing: ", err.Error())
-		}
+
+		go handleConnection(conn, buffer)
+
 	}
 
 }
