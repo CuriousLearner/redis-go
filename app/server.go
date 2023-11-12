@@ -63,10 +63,32 @@ func processCommand(commandString string) (response string) {
 		response = "+PONG\r\n"
 	case "ECHO":
 		response = fmt.Sprintf("$%d\r\n%s\r\n", len(args), args)
+	case "SET":
+		keyValue := strings.Split(args, " ")
+		handleSetCommand(keyValue[0], keyValue[1])
+		response = "+OK\r\n"
+	case "GET":
+		value, exists := handleGetCommand(args)
+		if exists {
+			response = fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
+		} else {
+			response = "$-1\r\n"
+		}
 	default:
 		response = "-ERR unknown command\r\n"
 	}
 	return response
+}
+
+var db = make(map[string]string)
+
+func handleSetCommand(key, value string) {
+	db[key] = value
+}
+
+func handleGetCommand(key string) (string, bool) {
+	value, exists := db[key]
+	return value, exists
 }
 
 func main() {
