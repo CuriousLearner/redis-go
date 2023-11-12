@@ -6,7 +6,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func parseCommand(encodedCommand []byte) (command string, err error) {
@@ -65,13 +67,23 @@ func processCommand(commandString string) (response string) {
 		response = fmt.Sprintf("$%d\r\n%s\r\n", len(args), args)
 	case "SET":
 		keyValue := strings.Split(args, " ")
-		handleSetCommand(keyValue[0], keyValue[1])
+		expiresMilli := 0
+		var err error
+		if len(keyValue) == 4 {
+			expiresMilli, err = strconv.Atoi(keyValue[3])
+			if strings.ToUpper(keyValue[2]) != "PX" || err != nil {
+				response = "-ERR unknown command\r\n"
+				break
+			}
+		}
+		handleSetCommand(keyValue[0], keyValue[1], int64(expiresMilli))
 		response = "+OK\r\n"
 	case "GET":
-		value, exists := handleGetCommand(args)
+		valueExp, exists := handleGetCommand(args)
 		if exists {
-			response = fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
+			response = fmt.Sprintf("$%d\r\n%s\r\n", len(valueExp.value), valueExp.value)
 		} else {
+			// `-1\r\n` (a "null bulk string")
 			response = "$-1\r\n"
 		}
 	default:
@@ -80,15 +92,29 @@ func processCommand(commandString string) (response string) {
 	return response
 }
 
-var db = make(map[string]string)
-
-func handleSetCommand(key, value string) {
-	db[key] = value
+type KVExpiry struct {
+	value  string
+	expiry int64
 }
 
-func handleGetCommand(key string) (string, bool) {
-	value, exists := db[key]
-	return value, exists
+var db = make(map[string]KVExpiry)
+
+func handleSetCommand(key, value string, expiry int64) {
+	expires := int64(0)
+	if expiry != 0 {
+		expires = time.Now().UnixMilli() + expiry
+	}
+	valueExp := KVExpiry{value: value, expiry: expires}
+	db[key] = valueExp
+}
+
+func handleGetCommand(key string) (KVExpiry, bool) {
+	valueExp, exists := db[key]
+	if exists && valueExp.expiry != 0 && time.Now().UnixMilli() > valueExp.expiry {
+		delete(db, key)
+		exists = false
+	}
+	return valueExp, exists
 }
 
 func main() {
