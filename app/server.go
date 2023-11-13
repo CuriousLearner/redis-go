@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -86,10 +87,21 @@ func processCommand(commandString string) (response string) {
 			// `-1\r\n` (a "null bulk string")
 			response = "$-1\r\n"
 		}
+	case "CONFIG":
+		if strings.ToUpper(parsedCommand[1]) != "GET" {
+			response = "-ERR unknown command\r\n"
+			break
+		}
+		key := string(parsedCommand[2])
+		response = formatRESPArray([]string{key, getConfig(key)})
 	default:
 		response = "-ERR unknown command\r\n"
 	}
 	return response
+}
+
+func getConfig(key string) string {
+	return config[key]
 }
 
 type KVExpiry struct {
@@ -117,9 +129,36 @@ func handleGetCommand(key string) (KVExpiry, bool) {
 	return valueExp, exists
 }
 
+func formatRESPBulkString(s string) string {
+	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
+}
+
+func formatRESPArray(elements []string) string {
+	resp := fmt.Sprintf("*%d\r\n", len(elements))
+	for _, element := range elements {
+		resp += formatRESPBulkString(element)
+	}
+	return resp
+}
+
+var dir string
+var dbfilename string
+
+func initConfig() {
+	flag.StringVar(&dir, "dir", "/default/path", "directory where RDB files are stored")
+	flag.StringVar(&dbfilename, "dbfilename", "dump.rdb", "name of the RDB file")
+	flag.Parse()
+	config["dir"] = dir
+	config["dbfilename"] = dbfilename
+}
+
+var config = make(map[string]string)
+
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
+
+	initConfig()
 
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
